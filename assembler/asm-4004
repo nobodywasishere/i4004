@@ -28,7 +28,7 @@ instr = {
         'sub': [0x9],
         'ld' : [0xA],
         'xch': [0xB],
-        'bll': [0xC],
+        'bbl': [0xC],
         'ldm': [0xD],
         'wrm': [0xE, 0x0],
         'wmp': [0xE, 0x1],
@@ -86,15 +86,20 @@ instr_unsupported = ['wpm']
 # list of registers
 reg_list = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15', 'p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7']
 
-symbols = {}
+symbols = {'.rom': 0}
 
 ####################################################################################################
 ####################################################################################################
 
 # Returns the hex value of a register given the register string
 def reg_to_hex(reg):
+    try:
+        if (int(reg) < 16):
+            return int(reg)
+    except:
+        pass
     if (reg not in reg_list):
-        print(reg, "is not a register")
+        print(reg, "is not a register", file=sys.stderr)
         exit(1)
 
     if 'r' in reg:
@@ -108,18 +113,25 @@ def symbol_to_hex(sym):
     except:
         pass
 
+    if sym in reg_list:
+        return reg_to_hex(sym)
+
     if isinstance(sym, int):
         return sym
     if "0x" in str(sym):
         if int(str(sym).replace("0x",""), 16) > 0xFFF:
-            print("Warning,", sym, "may be too large")
+            print("Warning,", sym, "may be too large", file=sys.stderr)
         return int(str(sym).replace("0x",""), 16)
     elif "#" in str(sym):
         if int(str(sym).replace("#",""), 10) > 4095:
-            print("Warning,", sym, "may be too large")
+            print("Warning,", sym, "may be too large", file=sys.stderr)
         return int(str(sym).replace("#",""), 10)
     else:
-        return symbols[sym]
+        try:
+            return symbols[sym]
+        except:
+            print(sym, "is not a symbol, integer, or address!")
+            exit(1)
 
 def parse_symbol(line):
     inst = line.replace(",", "").split(' ')
@@ -145,6 +157,8 @@ def parse_line(line):
         dec = [(dec[0] << 4) + (int(symbol_to_hex(inst[1])) >> 8)]
     elif len(dec) == 2:
         dec = [(dec[0] << 4) + symbol_to_hex(dec[1])]
+    elif len(dec) == 1 and inst[0] in instr_dos:
+        dec = [(dec[0] << 4) + symbol_to_hex(inst[1])]
     elif len(dec) == 1 and inst[0] in instr_ev:
         dec = [(dec[0] << 4) + ((reg_to_hex(inst[1]) >> 1) << 1)]
     else:
@@ -154,134 +168,207 @@ def parse_line(line):
         dec[0] += 1
 
     if inst[0] in instr_unsupported:
-        print(line, " is unsupported on the 4004")
+        print(line, " is unsupported on the 4004", file=sys.stderr)
         exit(1)
 
     if inst[0] in instr_dos:
         try:
             dec.append(symbol_to_hex(inst[2]))
         except:
-            print("Hex location required: ", line)
+            print("Location required: ", line, file=sys.stderr)
             exit(1)
 
     elif inst[0] in instr_short:
         try:
             dec.append(symbol_to_hex(inst[1]))
         except:
-            print("Hex location required: ", line)
+            print("Location required: ", line, file=sys.stderr)
             exit(1)
 
     elif inst[0] in instr_jump:
         try:
             dec.append(symbol_to_hex(inst[1])%256)
         except:
-            print("Hex location required: ", line)
+            print("Location required: ", line, file=sys.stderr)
             exit(1)
 
     try:
         return bytes(dec)
     except:
-        print(dec, " is too large!")
+        print(dec, " is too large!", file=sys.stderr)
         exit(1)
+
+def reset_rom(num, rom):
+    if rom == 0:
+        return num
+    else:
+        return num%(2**(8*(rom > 0))) + rom * (2**(8))
+
+def print_symbols(symbols):
+    print("Symbols:")
+    for sym in symbols:
+        print("\t", sym, "\t\t", hex(symbols[sym]))
+
+def parse_text(args, text):
+    # remove blank lines
+    text = [x for x in text if x != '']
+
+    # reset rom position
+    rom_pos = 0x0
+
+    if args.verbose:
+        print()
+
+    # First pass to check symbols
+    for line in text[:]:
+        line = line.split(';')[0].lstrip()
+        if line.replace(" ","") == '':
+            continue
+
+        parsed = parse_symbol(line)
+        if isinstance(parsed, str):
+            if "=" in parsed:
+                if "*" in parsed:
+                    # print(parsed, symbol_to_hex(parsed.split("=")[1]))
+                    rom_pos = symbol_to_hex(parsed.split("=")[1])
+                else:
+                    symbols[parsed.split("=")[0]] = int(parsed.split("=")[1])
+            elif ".byte" in parsed:
+                rom_pos += symbol_to_hex(line.split(" ")[1])
+            elif ".rom" in parsed:
+                symbols[parsed] = int(line.split(" ")[1])
+            else:
+                symbols[parsed] = rom_pos
+            continue
+        else:
+            rom_pos += len(parsed)
+
+    if args.verbose:
+        print_symbols(symbols)
+        print()
+
+    rom_pos = symbols['.rom'] << 8
+
+    code = []
+
+    # Second pass to translate
+    for line in text[:]:
+
+        verbose = args.verbose or (args.line is not None and (rom_pos >= args.line - args.surr and rom_pos <= args.line + args.surr))
+
+        # Remove comments and skip empty lines
+        line = line.split(';')[0].lstrip()
+        if line.replace(" ","") == '':
+            continue
+
+        parsed = parse_line(line)
+
+        if isinstance(parsed, str):
+            if "*=" in parsed:
+                if verbose:
+                    print("\t", parsed)
+
+                if symbol_to_hex(parsed[2:]) + (symbols['.rom'] << 8) <= rom_pos:
+                    print("Warning,", parsed, "is too short", file=sys.stderr)
+                for i in range(rom_pos, symbol_to_hex(parsed[2:]) + (symbols['.rom'] << 8)):
+                    nop_parse = parse_line("nop")
+                    code.append(nop_parse.hex())
+                    output_file.write(nop_parse)
+                    rom_pos += 1
+                continue
+
+            elif "." in parsed:
+                if parsed == ".byte":
+                    if verbose:
+                        print("\t", line.split(";")[0].lstrip())
+                    for i in range(0, int(line.split(" ")[1])):
+                        nop_parse = parse_line("nop")
+                        code.append(nop_parse.hex())
+                        output_file.write(nop_parse)
+                        rom_pos += 1
+                    continue
+                elif parsed == ".rom":
+                    if verbose:
+                        print("\t", line.split(";")[0].lstrip())
+                    continue
+                elif parsed == ".end":
+                    pass
+            elif parsed == "$" or parsed == ".end":
+                break
+
+            if verbose:
+                print("\t", parsed)
+
+            continue
+
+        if args.verbose or (args.line is not None and (rom_pos >= args.line - args.surr and rom_pos <= args.line + args.surr)):
+            if len(parsed) == 2:
+                print(" \033[31m$"f"{(rom_pos%2**16):03X}\033[0m", "\t\033[36m", parsed.hex()[:2], parsed.hex()[2:], "\033[0m\t", line)
+            else:
+                print(" \033[31m$"f"{(rom_pos%2**16):03X}\033[0m", "\t\033[36m", parsed.hex(), "\033[0m\t", line)
+
+        rom_pos += len(parsed)
+
+        if reset_rom(rom_pos, symbols['.rom']) - (symbols['.rom'] << 8) > 2**8:
+            print("ROM too large!", file=sys.stderr)
+            print(rom_pos, " / 256 instructions", file=sys.stderr)
+            exit(1)
+
+        code.append(parsed.hex())
+        output_file.write(parsed)
+
+    if args.verbose and args.m:
+        print()
+        print("".join(code))
+        print()
+
+    elif args.m:
+        print("".join(code))
 
 ####################################################################################################
 ####################################################################################################
 
 parser = argparse.ArgumentParser(description='Assembler for Intel 4004 Processor')
-parser.add_argument('-i', '--input', help='Input file', required=True)
-parser.add_argument('-o', '--output', help='Output file')
-parser.add_argument('-v', '--verbose', action='store_true')
+parser.add_argument('-v', '--verbose', action='store_true', help="Verbose output")
+parser.add_argument('-m', action='store_true', help="Print binary to stdout and file")
+parser.add_argument('-i', '--input', help='Input files', action='append')
+parser.add_argument('-o', '--output', help='Output file (Not compatible with multiple input files)')
 parser.add_argument('--line', help='Print out lines surrounding hex location in binary file')
 parser.add_argument('--surr', help='Number of surrounding lines for --line', type=int, default=2)
 
 args = parser.parse_args()
 
-if args.output is None:
-    args.output = ".".join(args.input.split(".")[:-1]) + ".bin"
-
-if args.line is not None:
-    args.line = int(args.line, 16)
-
-if args.verbose:
-    print()
-    print("Input file:", args.input)
-    print("Output file:", args.output)
-
-try:
-    input_file = open(args.input, 'r')
-except:
-    print("Unable to open file: ", args.input)
+if len(args.input) > 1 and args.output is not None:
+    print("Multifile input doesn't support named output", file=sys.stderr)
     exit(1)
 
-try:
-    output_file = open(args.output, 'wb')
-except:
-    print("Unable to open file: ", args.output)
-    exit(1)
+for file in args.input:
+    if len(args.input) > 1 or args.output is None:
+        args.output = ".".join(file.split(".")[:-1]) + ".bin"
 
-text = input_file.read().lower().split('\n')[:-1]
+    if args.line is not None:
+        args.line = int(args.line, 16)
 
-# remove blank lines
-text = [x for x in text if x != '']
+    if args.verbose:
+        print()
+        print("Input file:", file)
+        print("Output file:", args.output)
 
-rom_pos = 0x0
-
-if args.verbose:
-    print()
-
-# First pass to check symbols
-for line in text[:]:
-    line = line.split(';')[0].lstrip()
-    if line.replace(" ","") == '':
-        continue
-
-    parsed = parse_symbol(line)
-    if isinstance(parsed, str):
-        symbols[parsed] = rom_pos
-        continue
-    else:
-        rom_pos += len(parsed)
-
-if args.verbose:
-    print("symbols: ", symbols)
-    print()
-
-rom_pos = 0x0
-
-code = []
-
-# Second pass to translate
-for line in text[:]:
-
-    # Remove comments and skip empty lines
-    line = line.split(';')[0].lstrip()
-    if line.replace(" ","") == '':
-        continue
-
-    parsed = parse_line(line)
-
-    if isinstance(parsed, str):
-        if args.verbose or (args.line is not None and (rom_pos >= args.line - args.surr and rom_pos <= args.line + args.surr)):
-            print("\t", parsed)
-        continue
-
-    if args.verbose or (args.line is not None and (rom_pos >= args.line - args.surr and rom_pos <= args.line + args.surr)):
-        if len(parsed) == 2:
-            print(" \033[31m$"f"{(rom_pos%2**16):03X}\033[0m", "\t\033[36m", parsed.hex()[:2], parsed.hex()[2:], "\033[0m\t", line)
-        else:
-            print(" \033[31m$"f"{(rom_pos%2**16):03X}\033[0m", "\t\033[36m", parsed.hex(), "\033[0m\t", line)
-
-    rom_pos += len(parsed)
-
-    if rom_pos > 2**8:
-        print("ROM too large!")
-        print(rom_pos, " / 256 instructions")
+    try:
+        input_file = open(file, 'r')
+    except:
+        print("Unable to open file: ", file, file=sys.stderr)
         exit(1)
 
-    code.append(parsed.hex())
-    output_file.write(parsed)
+    try:
+        output_file = open(args.output, 'wb')
+    except:
+        print("Unable to open file: ", args.output, file=sys.stderr)
+        exit(1)
 
-if args.verbose:
-    print()
-    print("".join(code))
-    print()
+    text = input_file.read().lower().replace("\t", " ").split('\n')[:-1]
+
+    parse_text(args, text)
+
+    if args.verbose:
+        print()

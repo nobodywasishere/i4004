@@ -1,6 +1,7 @@
 ; ram_test.asm
 ; test the Intel 4002
 ; http://e4004.szyc.org/emu/
+.ROM 1
 init
 	FIM R0, 0      ; initialize R0=R1=0
 	FIM R2, 0      ; initialize R2=R3=0
@@ -13,7 +14,7 @@ loop1
 	ISZ R1, loop1  ; loop 16 times
 	INC R0         ; increment R0
 	ISZ R2, loop1  ; loop 4 times
-
+*=100
 	FIM R0, 0      ; initialize R0=R1=0
 	FIM R2, 0      ; initialize R2=R3=0
 	LDM 12         ; load 12 to accumulator
