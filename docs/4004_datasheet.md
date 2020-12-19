@@ -141,6 +141,12 @@ HEX     MNEMONIC    OPR         OPA         DESCRIPTION OF OPERATION
                                             C1C2C3C4 is true, otherwise go to the next instruction
                                             in sequence
 
+                                            C1 = 1  Invert jump condition
+                                            C1 = 0  Not invert jump condition
+                                            C2 = 1  Jump if accumulator is zero
+                                            C3 = 1  Jump of carry/link is a 1
+                                            C4 = 1  Jump if test signal is a 0
+
 2-      * FIM       0 0 1 0     R R R 0     Fetch immediate (direct) from ROM Data D2D2D2D2 D1D1D1D1
 --                  D2D2D2D2    D1D1D1D1    to index register pair location RRR
 
@@ -556,3 +562,30 @@ FF      -
 ![](timing.png)
 
 Figure 1. Timing Diagram
+
+
+Symbols and Abbreviations
+
+```
+( )     the content of
+->      is transferred to
+ACC     Accumulator (4-bit)
+CY      Carry/link Flip-flop
+ACBR    Accumulator Buffer Register (4-bit)
+RRRR    Index register address
+RRR     Index register pair address
+PL      Low order program counter field (4-bit)
+PM      Middle order program counter field (4-bit)
+PH      High order program counter field (4-bit)
+ai      Order i content of the accumulator
+CMi     Order i content of the command register
+M       RAM main character location
+Msi     RAM status character i
+DB (T)  Data bus content at time T
+Stack   The 3 registers in the address register other than the program counter
+
+page    a block of 256 instructions whose address differs only on the most significant 4 bits
+        (all of the instructions on one page are all stored in one ROM)
+        Example: page 7 means all locations between
+            0111 0000 0000 and 0111 1111 1111
+```

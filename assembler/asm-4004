@@ -66,6 +66,8 @@ instr_short = ['jnt', 'jc', 'jz', 'jt', 'jnc', 'jnz']
 
 instr_ev = ['fim', 'src', 'fin', 'jin']
 
+instr_unsupported = ['wpm']
+
 reg_list = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15']
 
 
@@ -98,6 +100,10 @@ def parse_line(line):
     if inst[0] in ['jin', 'src']:
         dec[0] += 1
 
+    if inst[0] in instr_unsupported:
+        print(line, " is unsupported on the 4004")
+        exit(1)
+
     if inst[0] in instr_dos:
         try:
             dec.append(int(inst[2], 16))
@@ -118,16 +124,19 @@ def parse_line(line):
 parser = argparse.ArgumentParser(description='Assembler for Intel 4004 Processor')
 parser.add_argument('-i', '--input', help='Input file', required=True)
 parser.add_argument('-o', '--output', help='Output file')
+parser.add_argument('-v', '--verbose', action='store_true')
+parser.add_argument('--line', help='Print out lines surrounding location in binary file', type=int)
+parser.add_argument('--surr', help='Number of surrounding lines for --line', type=int, default=2)
 
 args = parser.parse_args()
 
 if args.output is None:
     args.output = ".".join(args.input.split(".")[:-1]) + ".bin"
 
-print()
-
-print("Input file:", args.input)
-print("Output file:", args.output)
+if args.verbose:
+    print()
+    print("Input file:", args.input)
+    print("Output file:", args.output)
 
 try:
     input_file = open(args.input, 'r')
@@ -146,19 +155,36 @@ text = input_file.read().lower().split('\n')[:-1]
 # remove blank lines
 text = [x for x in text if x != '']
 
-# print(text)
+rom_pos = 0x0
 
-print()
+if args.verbose:
+    print()
 
 for line in text[:]:
 
     # Remove comments and skip empty lines
-    line = line.split(';')[0]
+    line = line.split(';')[0].lstrip()
     if line.replace(" ","") == '':
         continue
 
     parsed = parse_line(line)
-    print(parsed.hex(), "\t", line)
-    output_file.write(parsed,)
 
-print()
+    if args.verbose or (args.line is not None and (rom_pos >= args.line - args.surr and rom_pos <= args.line + args.surr)):
+        if len(parsed) == 2:
+            print(f"{int(rom_pos/10000):04}", f"{(rom_pos%9999):04}", "\t", parsed.hex()[:2], "\t", line)
+            rom_pos += 1
+            print(f"{int(rom_pos/10000):04}", f"{(rom_pos%9999):04}", "\t", parsed.hex()[2:], "\t")
+            rom_pos += 1
+        else:
+            print(f"{int(rom_pos/10000):04}", f"{(rom_pos%9999):04}", "\t", parsed.hex(), "\t", line)
+            rom_pos += 1
+    else:
+        if len(parsed) == 2:
+            rom_pos += 2
+        else:
+            rom_pos += 1
+
+    output_file.write(parsed)
+
+if args.verbose:
+    print()
