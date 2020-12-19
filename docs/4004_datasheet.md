@@ -523,7 +523,7 @@ DD      LDM     13
 DE      LDM     14
 DF      LDM     15
 
-E0      WRP
+E0      WRM
 E1      WMP
 E2      WRR
 E3      WPM

@@ -3,6 +3,10 @@
 import os, sys
 import argparse
 
+####################################################################################################
+####################################################################################################
+
+# instructions supported by the 4004
 instr = {
         'nop': [0x0, 0x0],
         'jcn': [0x1],
@@ -26,7 +30,7 @@ instr = {
         'xch': [0xB],
         'bll': [0xC],
         'ldm': [0xD],
-        'wrp': [0xE, 0x0],
+        'wrm': [0xE, 0x0],
         'wmp': [0xE, 0x1],
         'wrr': [0xE, 0x2],
         'wpm': [0xE, 0x3],
@@ -58,40 +62,89 @@ instr = {
         'dcl': [0xF, 0xD],
         }
 
+# instructions that take a
 instr_hex = ['jcn', 'inc', 'isz', 'add', 'sub', 'ld', 'xch', 'bll', 'ldm']
 
-instr_dos = ['jcn', 'fim', 'jun', 'jms', 'isz']
+# instructions that are 16-bit and dont address 12-bits
+instr_dos = ['jcn', 'fim', 'isz']
 
+# shortened versions of jcn
 instr_short = ['jnt', 'jc', 'jz', 'jt', 'jnc', 'jnz']
 
+# instructions that address a pair
 instr_ev = ['fim', 'src', 'fin', 'jin']
 
+# instructions that take in data
+instr_data = ['ldm', 'bbl']
+
+# instructions that are 16-bit and do address 12-bits
+instr_jump = ['jun', 'jms']
+
+# unsupported instructions
 instr_unsupported = ['wpm']
 
-reg_list = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15']
+# list of registers
+reg_list = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15', 'p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7']
 
+symbols = {}
+
+####################################################################################################
+####################################################################################################
 
 # Returns the hex value of a register given the register string
 def reg_to_hex(reg):
     if (reg not in reg_list):
-        print(reg, " is not a register")
+        print(reg, "is not a register")
         exit(1)
 
-    # remove the r
-    return int(reg[1:])
+    if 'r' in reg:
+        return int(reg.replace('r',''))
+    elif 'p' in reg:
+        return (int(reg.replace('p','')) << 1)
 
-def parse_line(line):
-    inst = line.split(' ')
+def symbol_to_hex(sym):
+    try:
+        return int(sym)
+    except:
+        pass
+
+    if isinstance(sym, int):
+        return sym
+    if "0x" in str(sym):
+        if int(str(sym).replace("0x",""), 16) > 0xFFF:
+            print("Warning,", sym, "may be too large")
+        return int(str(sym).replace("0x",""), 16)
+    elif "#" in str(sym):
+        if int(str(sym).replace("#",""), 10) > 4095:
+            print("Warning,", sym, "may be too large")
+        return int(str(sym).replace("#",""), 10)
+    else:
+        return symbols[sym]
+
+def parse_symbol(line):
+    inst = line.replace(",", "").split(' ')
     try:
         dec = instr[inst[0]][:]
     except:
-        print(inst[0], " is not an instruction")
-        exit(1)
+        return inst[0]
+    if inst[0] in instr_dos or inst[0] in instr_jump or inst[0] in instr_short:
+        return [-1, -1]
+    else:
+        return [-1]
 
-    if len(dec) == 1 and inst[0] in instr_hex:
-        dec = [(dec[0] << 4) + reg_to_hex(inst[1])]
+def parse_line(line):
+    inst = line.replace(",", "").split(' ')
+    try:
+        dec = instr[inst[0]][:]
+    except:
+        return inst[0]
+
+    if len(dec) == 1 and inst[0] in instr_data:
+        dec = [(dec[0] << 4) + int(inst[1])]
+    elif len(dec) == 1 and inst[0] in instr_jump:
+        dec = [(dec[0] << 4) + (int(symbol_to_hex(inst[1])) >> 8)]
     elif len(dec) == 2:
-        dec = [(dec[0] << 4) + dec[1]]
+        dec = [(dec[0] << 4) + symbol_to_hex(dec[1])]
     elif len(dec) == 1 and inst[0] in instr_ev:
         dec = [(dec[0] << 4) + ((reg_to_hex(inst[1]) >> 1) << 1)]
     else:
@@ -106,32 +159,48 @@ def parse_line(line):
 
     if inst[0] in instr_dos:
         try:
-            dec.append(int(inst[2], 16))
+            dec.append(symbol_to_hex(inst[2]))
         except:
             print("Hex location required: ", line)
             exit(1)
 
     elif inst[0] in instr_short:
         try:
-            dec.append(int(inst[1], 16))
+            dec.append(symbol_to_hex(inst[1]))
         except:
             print("Hex location required: ", line)
             exit(1)
 
+    elif inst[0] in instr_jump:
+        try:
+            dec.append(symbol_to_hex(inst[1])%256)
+        except:
+            print("Hex location required: ", line)
+            exit(1)
 
-    return bytes(dec)
+    try:
+        return bytes(dec)
+    except:
+        print(dec, " is too large!")
+        exit(1)
+
+####################################################################################################
+####################################################################################################
 
 parser = argparse.ArgumentParser(description='Assembler for Intel 4004 Processor')
 parser.add_argument('-i', '--input', help='Input file', required=True)
 parser.add_argument('-o', '--output', help='Output file')
 parser.add_argument('-v', '--verbose', action='store_true')
-parser.add_argument('--line', help='Print out lines surrounding location in binary file', type=int)
+parser.add_argument('--line', help='Print out lines surrounding hex location in binary file')
 parser.add_argument('--surr', help='Number of surrounding lines for --line', type=int, default=2)
 
 args = parser.parse_args()
 
 if args.output is None:
     args.output = ".".join(args.input.split(".")[:-1]) + ".bin"
+
+if args.line is not None:
+    args.line = int(args.line, 16)
 
 if args.verbose:
     print()
@@ -160,6 +229,28 @@ rom_pos = 0x0
 if args.verbose:
     print()
 
+# First pass to check symbols
+for line in text[:]:
+    line = line.split(';')[0].lstrip()
+    if line.replace(" ","") == '':
+        continue
+
+    parsed = parse_symbol(line)
+    if isinstance(parsed, str):
+        symbols[parsed] = rom_pos
+        continue
+    else:
+        rom_pos += len(parsed)
+
+if args.verbose:
+    print("symbols: ", symbols)
+    print()
+
+rom_pos = 0x0
+
+code = []
+
+# Second pass to translate
 for line in text[:]:
 
     # Remove comments and skip empty lines
@@ -169,22 +260,28 @@ for line in text[:]:
 
     parsed = parse_line(line)
 
+    if isinstance(parsed, str):
+        if args.verbose or (args.line is not None and (rom_pos >= args.line - args.surr and rom_pos <= args.line + args.surr)):
+            print("\t", parsed)
+        continue
+
     if args.verbose or (args.line is not None and (rom_pos >= args.line - args.surr and rom_pos <= args.line + args.surr)):
         if len(parsed) == 2:
-            print(f"{int(rom_pos/10000):04}", f"{(rom_pos%9999):04}", "\t", parsed.hex()[:2], "\t", line)
-            rom_pos += 1
-            print(f"{int(rom_pos/10000):04}", f"{(rom_pos%9999):04}", "\t", parsed.hex()[2:], "\t")
-            rom_pos += 1
+            print(" \033[31m$"f"{(rom_pos%2**16):03X}\033[0m", "\t\033[36m", parsed.hex()[:2], parsed.hex()[2:], "\033[0m\t", line)
         else:
-            print(f"{int(rom_pos/10000):04}", f"{(rom_pos%9999):04}", "\t", parsed.hex(), "\t", line)
-            rom_pos += 1
-    else:
-        if len(parsed) == 2:
-            rom_pos += 2
-        else:
-            rom_pos += 1
+            print(" \033[31m$"f"{(rom_pos%2**16):03X}\033[0m", "\t\033[36m", parsed.hex(), "\033[0m\t", line)
 
+    rom_pos += len(parsed)
+
+    if rom_pos > 2**8:
+        print("ROM too large!")
+        print(rom_pos, " / 256 instructions")
+        exit(1)
+
+    code.append(parsed.hex())
     output_file.write(parsed)
 
 if args.verbose:
+    print()
+    print("".join(code))
     print()

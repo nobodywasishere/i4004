@@ -2,9 +2,14 @@
 
 A simple Intel 4004 Assembler written in Python
 
-- Comments are done using semicolons (`;`)
-- Lines of code can have leading spaces
 - Automatically generates 8-bit and 16-bit instructions from assembly code
+- Comments are done using semicolons (`;`)
+- Hexidecimal numbers start with `0x`
+- Decimal numbers can stand alone or start with `#`
+- Lines of code can have leading spaces
+- Instructions that address a register pair can be assigned through either one of the individual registers (i.e. `r4` and `r5`) or the combined register (i.e. `p0` and `p1`)
+- Warnings are presented if a number is possibly too large
+- Easy to add or modify instructions
 
 See [the datasheet](../docs/4004_datasheet.md) for the instructions the processor supports
 
@@ -26,24 +31,25 @@ optional arguments:
 
 Example (nonsensical) assembly code:
 ```
-; no operation
-NOP
-
-; clear accumulator and carry
-CLB
-
-; increment register 15
-INC r15
-
-; jump to addr 0x31 if condition is 1
-JNT 0x31
-
-; fetch immediate from rom data 0x80 into register r5
-FIM r5 0x80
-
-; send contents of register pair r4 + r5 out as address
-; on A1 and A2 time in the instruction cycle
-JIN r3
+init
+    ; no operation
+    NOP
+test
+    ; clear accumulator and carry
+    CLB
+    ; increment register 15
+    INC r15
+    ; jump to addr 0x31 if condition is 1
+    JNT test
+test2
+    ; fetch immediate from rom data 0x80 into register r5
+    FIM r5, init
+    ; send contents of register pair r4 + r5 out as address
+    ; on A1 and A2 time in the instruction cycle
+    JIN p2
+    JUN #5005
+test3
+    JUN 0x345
 ```
 
 Command-line (verbose) output:
@@ -53,22 +59,34 @@ $ ./asm-4004 -i test.asm -v
 Input file: test.asm
 Output file: test.bin
 
-0000 0000 	 00 	 nop
-0000 0001 	 f0 	 clb
-0000 0002 	 6f 	 inc r15
-0000 0003 	 11 	 jnt 0x31
-0000 0004 	 31 	
-0000 0005 	 24 	 fim r5 0x80
-0000 0006 	 80 	
-0000 0007 	 33 	 jin r3
+symbols:  {'init': 0, 'test': 1, 'test2': 5, 'test3': 10}
+
+	 init
+ $000 	 00 	 nop
+	 test
+ $001 	 f0 	 clb
+ $002 	 6f 	 inc r15
+ $003 	 11 01 	 jnt test
+	 test2
+ $005 	 24 00 	 fim r5, init
+ $007 	 35 	 jin p2
+Warning, #5005 may be too large
+Warning, #5005 may be too large
+ $008 	 53 8d 	 jun #5005
+	 test3
+ $00A 	 43 45 	 jun 0x345
+
+00f06f1101240035538d4345
 
 ```
 
 Machine code:
 ```
-00 F0 6F 11 31 24 80 33
+00 f0 6f 11 01 24 00 35 53 8d 43 45
 ```
 
 To-Do:
-- [ ] Symbol handling for processes and memory locations
+- [x] Symbol handling for processes and memory locations
+- [x] Warnings about numbers that are too large
+- [ ] Better warnings / possibly suppress with command line option
 - [ ] Multi-file code and processes
