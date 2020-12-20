@@ -61,10 +61,10 @@ test3
 
 Command-line (verbose) output:
 ```
-$ ./asm-4004 -i test.asm -v
+$ ./asm-4004 -v -i src/test.asm -o src/test.bin
 
-Input file: test.asm
-Output file: test.bin
+Input file: src/test.asm
+Output file: src/test.bin
 
 Symbols:
 	 .rom 		 0x0

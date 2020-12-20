@@ -1,5 +1,30 @@
 #!/usr/bin/env python
 
+####################################################################################################
+#
+#   asm-4004 - Assembler for the Intel 4004 Processor
+#
+#   Copyright 2020 Michael Riegert
+#
+#   Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#   and associated documentation files (the "Software"), to deal in the Software without
+#   restriction, including without limitation the rights to use, copy, modify, merge, publish,
+#   distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+#   Software is furnished to do so, subject to the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included in all copies or
+#   substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+#   BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+#   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+####################################################################################################
+
+# Written with Python 3.9
+
 import os, sys
 import argparse
 
@@ -130,7 +155,7 @@ def symbol_to_hex(sym):
         try:
             return symbols[sym]
         except:
-            print(sym, "is not a symbol, integer, or address!")
+            print(sym, "is not a symbol, integer, or address!", file=sys.stderr)
             exit(1)
 
 def parse_symbol(line):
@@ -152,7 +177,10 @@ def parse_line(line):
         return inst[0]
 
     if len(dec) == 1 and inst[0] in instr_data:
-        dec = [(dec[0] << 4) + int(inst[1])]
+        try:
+            dec = [(dec[0] << 4) + int(inst[1] if inst[1] != '' else 0)]
+        except:
+            dec = [(dec[0] << 4) + 0]
     elif len(dec) == 1 and inst[0] in instr_jump:
         dec = [(dec[0] << 4) + (int(symbol_to_hex(inst[1])) >> 8)]
     elif len(dec) == 2:
@@ -232,7 +260,7 @@ def parse_text(args, text):
                     # print(parsed, symbol_to_hex(parsed.split("=")[1]))
                     rom_pos = symbol_to_hex(parsed.split("=")[1])
                 else:
-                    symbols[parsed.split("=")[0]] = int(parsed.split("=")[1])
+                    symbols[parsed.split("=")[0]] = symbol_to_hex(parsed.split("=")[1])
             elif ".byte" in parsed:
                 rom_pos += symbol_to_hex(line.split(" ")[1])
             elif ".rom" in parsed:
