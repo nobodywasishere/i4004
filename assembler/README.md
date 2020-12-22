@@ -12,7 +12,6 @@ A simple Intel 4004 Assembler written in Python
 - Warnings are presented if a number is possibly too large, or if the overall file is too large
 - Symbols must be on their own line
 - Define values for symbols using `=` (i.e. `cz=100`)
-- Set which ROM to use with `.rom 2` at the beginning of the file, defaults to `0`
 
 See [the datasheet](../docs/4004_datasheet.md) for the instructions the processor supports
 
